@@ -1,110 +1,154 @@
-import time
-import random
+import asyncio
 import os
-import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from playwright.sync_api import sync_playwright
+from playwright.async_api import async_playwright
 
-def extract_content_from_page(page):
-    # Lấy tiêu đề
-    title = page.query_selector("div.h3-bold-detail").inner_text() if page.query_selector("div.h3-bold-detail") else "No title found"
-    title_safe = "".join(x for x in title if x.isalnum() or x in "._- ")  # Tạo tên tệp an toàn
+async def extract_content_from_page(link):
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+        await page.goto(link)
+        await page.wait_for_timeout(5000)
 
-    # Lấy nội dung
-    content = page.query_selector("div.content").inner_text() if page.query_selector("div.content") else "No content found"
+        # Lấy tiêu đề
+        title = await page.query_selector("div.h3-bold-detail")
+        title_text = await title.inner_text() if title else "No title found"
+        title_safe = "".join(x for x in title_text if x.isalnum() or x in "._- ")  # Tạo tên tệp an toàn
 
-    # Lấy ảnh
-    image_url = page.query_selector("img.image-news").get_attribute("src") if page.query_selector("img.image-news") else None
+        # Lấy nội dung
+        content = await page.query_selector("div.content")
+        content_text = await content.inner_text() if content else "No content found"
 
-    # Lấy audio
-    audio_url = page.query_selector("audio source").get_attribute("src") if page.query_selector("audio source") else None
+        # Lấy ảnh
+        image = await page.query_selector("img.image-news")
+        image_url = await image.get_attribute("src") if image else None
 
-    return {
-        "title": title_safe,
-        "content": content,
-        "image_url": image_url,
-        "audio_url": audio_url
-    }
+        # Lấy audio
+        audio = await page.query_selector("audio source")
+        audio_url = await audio.get_attribute("src") if audio else None
 
-def download_file(url, base_url, folder, filename):
-    if url:
-        # Kiểm tra nếu URL là đường dẫn tương đối
-        if not url.startswith("http"):
-            url = base_url.rstrip("/") + "/" + url.lstrip("/")
-        
-        response = requests.get(url)
-        if response.status_code == 200:
-            with open(os.path.join(folder, filename), 'wb') as f:
-                f.write(response.content)
+        await browser.close()  # Đóng trình duyệt sau khi sử dụng
 
-with sync_playwright() as p:
+        return {
+            "title": title_safe,
+            "content": content_text,
+            "image_url": image_url,
+            "audio_url": audio_url
+        }
+
+async def extract_video_info(link):
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+        await page.goto(link)
+        await page.wait_for_timeout(5000)
+
+        # Lấy thông tin video
+        iframe = await page.query_selector("iframe")
+        title_element = await page.query_selector("h3")  # Giả sử tiêu đề nằm trong thẻ h3
+        level_element = await page.query_selector("div.level")
+        video_link = await iframe.get_attribute("src") if iframe else None
+        video_title = await title_element.inner_text() if title_element else "No title found"
+        video_level = await level_element.inner_text() if level_element else "No level found"
+
+        await browser.close()
+        return (video_title, video_link, video_level)
+
+async def get_video_links():
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+        # Điều hướng đến trang video
+        await page.goto("https://german.todainews.com/video?hl=en")
+        await page.wait_for_timeout(5000)
+
+        # Lấy danh sách liên kết video
+        video_links = []
+        video_items = await page.locator("a.video-item").all()  # Giả sử mỗi video có một liên kết với class 'video-item'
+        for item in video_items:
+            link = await item.get_attribute("href")
+            video_links.append(link)
+            await asyncio.sleep(2)  # Thêm độ trễ giữa các yêu cầu
+
+        await browser.close()
+        return video_links
+
+async def main():
     BASE_URL = "https://german.todainews.com/"
-    browser = p.chromium.launch(headless=True)
-    page = browser.new_page()
-    page.goto("https://german.todainews.com/news?hl=en")
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
 
-    # Đợi trang tải dữ liệu
-    page.wait_for_timeout(5000)
+        # Lấy danh sách bài viết từ trang new
+        await page.goto("https://german.todainews.com/news?hl=en")
+        await page.wait_for_timeout(5000)
+        articles = await page.locator("a.news-item").all()
+        article_links = [await article.get_attribute("href") for article in articles]
+        article_links_full = [BASE_URL.rstrip("/") + link for link in article_links]
 
-    # Lấy danh sách bài viết
-    articles = page.locator("a.news-item").all()
-    article_links = [article.get_attribute("href") for article in articles]
+        # Lấy danh sách liên kết video từ trang video
+        video_links = await get_video_links()
+        video_links_full = [BASE_URL.rstrip("/") + link for link in video_links]
 
-    # Lấy danh sách cấp bậc của các bài viết
-    level_post_all = page.query_selector_all("div.level-mini")
-    levels = [level.inner_text() for level in level_post_all]
+        print("Danh sách link bài viết:", article_links_full)
+        print("Danh sách link video:", video_links_full)
 
-    print("Level: ", levels)
-    article_links_full = []
-    for link in article_links:
-        full_link = BASE_URL.rstrip("/") + link
-        article_links_full.append(full_link)
+        # Tạo thư mục để lưu ảnh và audio
+        os.makedirs("media", exist_ok=True)
 
-    print("Danh sách link bài viết:", article_links_full)
+        # Lưu nội dung vào danh sách
+        contents = []
 
-    # Tạo thư mục để lưu ảnh và audio
-    os.makedirs("media", exist_ok=True)
+        # Sử dụng ThreadPoolExecutor để lấy nội dung song song
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            future_to_link = {executor.submit(asyncio.run, extract_content_from_page(link)): link for link in article_links_full}
 
-    # Lưu nội dung vào danh sách
-    contents = []
+            # Chờ các tác vụ hoàn thành
+            for future in as_completed(future_to_link):
+                link = future_to_link[future]
+                try:
+                    data = future.result()
+                    contents.append(data)
+                    print(f"Nội dung từ {link}:")
+                    print(data)
+                    print("=" * 50)
+                except Exception as exc:
+                    print(f"Lỗi khi lấy nội dung từ {link}: {exc}")
 
-    # Sử dụng ThreadPoolExecutor để tải tệp song song
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        future_to_url = {}
-        for link in article_links_full:
-            page.goto(link)
-            page.wait_for_timeout(5000)
+        # Lưu thông tin video vào danh sách
+        video_contents = []
 
-            # Lấy nội dung từ trang chi tiết
-            data = extract_content_from_page(page)
-            contents.append(data)
-            print(f"Nội dung từ {link}:")
-            print(data)
-            print("=" * 50)
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            future_to_link = {executor.submit(asyncio.run, extract_video_info(link)): link for link in video_links_full}
 
-            # Gửi các tác vụ tải tệp
-            if data['image_url']:
-                future_to_url[executor.submit(download_file, data['image_url'], BASE_URL, "media", f"{data['title']}_image.jpg")] = data['image_url']
-            if data['audio_url']:
-                future_to_url[executor.submit(download_file, data['audio_url'], BASE_URL, "media", f"{data['title']}_audio.mp3")] = data['audio_url']
+            # Chờ các tác vụ hoàn thành
+            for future in as_completed(future_to_link):
+                link = future_to_link[future]
+                try:
+                    data = future.result()
+                    video_contents.append(data)
+                    print(f"Thông tin video từ {link}:")
+                    print(data)
+                    print("=" * 50)
+                except Exception as exc:
+                    print(f"Lỗi khi lấy thông tin video từ {link}: {exc}")
 
-        # Chờ các tác vụ hoàn thành
-        for future in as_completed(future_to_url):
-            url = future_to_url[future]
-            try:
-                future.result()
-                print(f"Tải thành công: {url}")
-            except Exception as exc:
-                print(f"Tải thất bại {url}: {exc}")
+        # Lưu nội dung và video vào tệp
+        with open("news_contents.txt", "w", encoding="utf-8") as f:
+            for data in contents:
+                f.write(f"Title: {data['title']}\n")
+                f.write(f"Content: {data['content']}\n")
+                f.write(f"Image: {data['image_url']}\n")
+                f.write(f"Audio: {data['audio_url']}\n")
+                f.write("\n\n")
+        
+        with open("video_links.txt", "w", encoding="utf-8") as f:
+            for title, link, level in video_contents:
+                f.write(f"Title: {title}\n")
+                f.write(f"Link: {link}\n")
+                f.write(f"Level: {level}\n\n")
 
-    # Lưu nội dung vào tệp
-    with open("contents.txt", "w", encoding="utf-8") as f:
-        for i, data in enumerate(contents):
-            f.write(f"Title: {data['title']}\n")
-            f.write(f"Content: {data['content']}\n")
-            f.write(f"Level: {levels[i]}\n")
-            f.write(f"Image: {data['image_url']}\n")
-            f.write(f"Audio: {data['audio_url']}\n")
-            f.write("\n\n")
+        await browser.close()
 
-    browser.close()
+# Chạy hàm main
+asyncio.run(main())
