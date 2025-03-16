@@ -1,0 +1,61 @@
+# # import requests
+# # from bs4 import BeautifulSoup
+
+# # #URL trang chinh
+# # BASE_URL = "https://german.todainews.com/"
+
+# # #Send request to URL
+# # response = requests.get(BASE_URL)
+# # soup = BeautifulSoup(response.text, "html.parser")
+
+# # #Get list post
+# # articles = soup.find_all("article")
+
+# # for article in articles:
+# #     title = article.find("h2").text.strip()
+# #     link = article.find("a")["href"]
+
+# #     print(f"Title: {title}")
+# #     print(f"Link: {link}")
+
+# #     #Craw detail content
+# #     article_response = requests.get(link)
+# #     article_soup = BeautifulSoup(article_response.text, "html.parser")
+# #     content = article_soup.find("div", class_="post-content").text.strip()
+
+# #     print(f"Content: {content[:200]}...")
+# #     print("=" *50)
+
+# # #Craw video
+# # videos = soup.find_all("iframe")
+# # for video in videos:
+# #     video_link = video["src"]
+# #     print(f"Video: {video_link}")
+
+# import requests
+# from bs4 import BeautifulSoup
+
+# import time
+# import random
+
+# BASE_URL = "https://german.todainews.com/"
+
+# # Gửi request đến trang chính
+# response = requests.get(BASE_URL)
+# soup = BeautifulSoup(response.text, "html.parser")
+
+# print(soup)
+
+
+# # # Tìm tất cả link bài viết
+# # articles = soup.find_all("a", class_="news-item d-inline-block")
+
+# # article_links = []
+# # for article in articles:
+# #     link = article["href"]
+# #     full_link = BASE_URL.rstrip("/") + link  # Chuyển thành link đầy đủ
+# #     article_links.append(full_link)
+
+# # print("Danh sách link bài viết:", article_links)
+
+# time.sleep(random.uniform(1,3))
